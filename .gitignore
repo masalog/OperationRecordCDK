@@ -2,10 +2,10 @@
 # Node.js / TypeScript
 # =====================
 node_modules/
+*.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-*.tsbuildinfo
 
 # =====================
 # AWS CDK
@@ -26,17 +26,22 @@ coverage/
 # =====================
 .env
 .env.*
+!.env.example
 
 # =====================
 # OS / Editor
 # =====================
 .DS_Store
 Thumbs.db
+*~
 
-# VS Code (個人設定は除外)
+# =====================
+# VS Code
+# =====================
 .vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
+!.vscode/settings.json
 
 # =====================
 # IDE
@@ -45,7 +50,17 @@ Thumbs.db
 *.iml
 
 # =====================
-# Logs / temp files
+# Logs
 # =====================
 *.log
-*~
+
+# =====================
+# TypeScript
+# =====================
+*.d.ts
+
+# =====================
+# JavaScript build output
+# =====================
+*.js
+!jest.config.js
