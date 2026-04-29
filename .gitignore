@@ -1,0 +1,51 @@
+# =====================
+# Node.js / TypeScript
+# =====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+
+# =====================
+# AWS CDK
+# =====================
+cdk.out/
+cdk.context.json
+.cdk.staging/
+
+# =====================
+# Build / Coverage
+# =====================
+dist/
+coverage/
+.nyc_output/
+
+# =====================
+# Environment / Secrets
+# =====================
+.env
+.env.*
+
+# =====================
+# OS / Editor
+# =====================
+.DS_Store
+Thumbs.db
+
+# VS Code (個人設定は除外)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# =====================
+# IDE
+# =====================
+.idea/
+*.iml
+
+# =====================
+# Logs / temp files
+# =====================
+*.log
+*~
