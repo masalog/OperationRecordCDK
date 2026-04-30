@@ -102,6 +102,11 @@
     "@aws-cdk/aws-cloudfront:defaultFunctionRuntimeV2_0": true,
     "@aws-cdk/aws-elasticloadbalancingv2:usePostQuantumTlsPolicy": true,
     "ecrRepositoryName": "operation_record_ecs",
-    "ecrImageTag": "2026-04-24-02"
+    "ecrImageTag": "2026-04-24-02",
+    "dbUsername": "admin",
+    "dbPassword": "A7fQ9mXLtp2RkW8ZsE!C",
+    "dbName": "appdb",
+    "envBucketName": "operation-record-ecs",
+    "envObjectKey": "ecs.env"
   }
 }
