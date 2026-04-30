@@ -22,9 +22,13 @@ const env = {
 const ecrRepositoryName = app.node.tryGetContext('ecrRepositoryName') as string;
 const ecrImageTag = (app.node.tryGetContext('ecrImageTag') as string) ?? 'latest';
 
-// ECS が読む S3 ecs.env 用（★追加）
+// ECS が読む S3 env 用
 const envBucketName = app.node.tryGetContext('envBucketName') as string;
 const envObjectKey = app.node.tryGetContext('envObjectKey') as string;
+
+// ★追加：既存SQS（例: line-webhook-events）
+const targetQueueArn = app.node.tryGetContext('targetQueueArn') as string;
+const targetQueueUrl = app.node.tryGetContext('targetQueueUrl') as string;
 
 // RDS 用（Context 認証）
 const dbUsername = app.node.tryGetContext('dbUsername') as string;
@@ -39,7 +43,10 @@ if (!ecrRepositoryName) {
   throw new Error("CDK Context 'ecrRepositoryName' が未設定です。");
 }
 if (!envBucketName || !envObjectKey) {
-  throw new Error("CDK Context 'envBucketName' または 'envObjectKey'（S3 .env）が未設定です。");
+  throw new Error("CDK Context 'envBucketName' または 'envObjectKey'（S3 env）が未設定です。");
+}
+if (!targetQueueArn || !targetQueueUrl) {
+  throw new Error("CDK Context 'targetQueueArn' または 'targetQueueUrl'（既存SQS）が未設定です。");
 }
 if (!dbUsername || !dbPassword) {
   throw new Error("CDK Context 'dbUsername' または 'dbPassword' が未設定です。");
@@ -52,19 +59,23 @@ if (!dbUsername || !dbPassword) {
 const networkStack = new NetworkStack(app, 'NetworkStack', { env });
 
 /* =========================
- * 2. ECS Stack（S3 ecs.env 読み込み対応）
+ * 2. ECS Stack（S3 env + 既存SQS 対応）
  * ========================= */
 
 new EcsStack(app, 'EcsStack', {
   env,
   vpc: networkStack.vpc,
   ecsSg: networkStack.ecsSg,
+
   ecrRepositoryName,
   ecrImageTag,
 
-  // ★追加：S3 の ecs.env の場所
   envBucketName,
   envObjectKey,
+
+  // ★追加：既存SQS
+  targetQueueArn,
+  targetQueueUrl,
 });
 
 /* =========================
