@@ -119,4 +119,4 @@ cdk destroy
 - ECS と RDS はそれぞれ専用の Security Group を割り当てる。
 - RDS の Security Group では、ECS の Security Group からの接続のみを許可する。
 - 外部通信は ECS からのみ行い、RDS からの直接的な外部通信は行わない。
-- データベースの認証情報は AWS Secrets Manager を利用して安全に管理する。
+- ECSが参照する認証情報は S3バケットの.envファイルから取得する。
