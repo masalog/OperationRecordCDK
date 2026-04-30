@@ -107,6 +107,8 @@
     "dbPassword": "A7fQ9mXLtp2RkW8ZsE!C",
     "dbName": "appdb",
     "envBucketName": "operation-record-ecs",
-    "envObjectKey": "ecs.env"
+    "envObjectKey": "ecs.env",
+    "targetQueueArn": "arn:aws:sqs:ap-northeast-1:070938123165:line-webhook-events",
+    "targetQueueUrl": "https://sqs.ap-northeast-1.amazonaws.com/070938123165/line-webhook-events"
   }
 }
