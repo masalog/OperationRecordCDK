@@ -5,8 +5,6 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
-
-// ★追加
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 
@@ -14,90 +12,96 @@ export interface EcsStackProps extends StackProps {
   vpc: ec2.Vpc;
   ecsSg: ec2.SecurityGroup;
 
-  // 既存ECR
+  // ECR
   ecrRepositoryName: string;
   ecrImageTag?: string;
 
-  // ★追加：S3の.envファイル場所
-  envBucketName: string;   // 例: "my-config-bucket"
-  envObjectKey: string;    // 例: "config/app.env"
+  // S3 .env
+  envBucketName: string;
+  envObjectKey: string; // 例: "config/app.env"（先頭/なし推奨）
+
+  // ★重要：アプリが実際に読む既存SQS（例: line-webhook-events）
+  targetQueueArn: string;
+  targetQueueUrl: string;
 }
 
 export class EcsStack extends Stack {
-  public readonly queue: sqs.Queue;
   public readonly cluster: ecs.Cluster;
   public readonly service: ecs.FargateService;
 
   constructor(scope: Construct, id: string, props: EcsStackProps) {
     super(scope, id, props);
 
-    const { vpc, ecsSg } = props;
+    const {
+      vpc, ecsSg,
+      ecrRepositoryName, ecrImageTag,
+      envBucketName, envObjectKey,
+      targetQueueArn, targetQueueUrl
+    } = props;
 
-    if (!props.ecrRepositoryName || props.ecrRepositoryName.trim().length === 0) {
-      throw new Error("ecrRepositoryName が未設定です。");
-    }
-    if (!props.envBucketName || !props.envObjectKey) {
-      throw new Error("envBucketName / envObjectKey（S3の.env指定）が未設定です。");
-    }
+    if (!ecrRepositoryName?.trim()) throw new Error("ecrRepositoryName が未設定です。");
+    if (!envBucketName?.trim() || !envObjectKey?.trim()) throw new Error("envBucketName / envObjectKey が未設定です。");
+    if (!targetQueueArn?.trim() || !targetQueueUrl?.trim()) throw new Error("targetQueueArn / targetQueueUrl（既存SQS）が未設定です。");
 
-    const ecrImageTag = props.ecrImageTag ?? 'latest';
-
-    // --- SQS ---
-    this.queue = new sqs.Queue(this, 'AppQueue', {
-      visibilityTimeout: Duration.seconds(300),
-      retentionPeriod: Duration.days(4),
-      removalPolicy: RemovalPolicy.DESTROY,
-    });
-
-    // --- ECS Cluster ---
+    // ECS Cluster
     this.cluster = new ecs.Cluster(this, 'Cluster', { vpc });
 
-    // --- Logs ---
+    // Logs
     const logGroup = new logs.LogGroup(this, 'AppLogGroup', {
       retention: logs.RetentionDays.ONE_WEEK,
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
-    // --- Task Definition ---
+    // Task Definition
     const taskDef = new ecs.FargateTaskDefinition(this, 'TaskDef', {
       cpu: 512,
       memoryLimitMiB: 2048,
     });
 
-    // 既存ECR参照
-    const repo = ecr.Repository.fromRepositoryName(this, 'AppEcrRepo', props.ecrRepositoryName);
+    // --- 既存ECR ---
+    const repo = ecr.Repository.fromRepositoryName(this, 'AppEcrRepo', ecrRepositoryName);
+    const tag = ecrImageTag ?? 'latest';
 
-    // ★ S3バケット参照（既存バケット想定）
-    const envBucket = s3.Bucket.fromBucketName(this, 'EnvBucket', props.envBucketName);
+    // --- S3 .env ---
+    const envBucket = s3.Bucket.fromBucketName(this, 'EnvBucket', envBucketName);
 
-    // ★ envファイルをS3から読むための権限（Execution Roleに付与）
-    taskDef.addToExecutionRolePolicy(
-      new iam.PolicyStatement({
-        actions: ['s3:GetObject'],
-        resources: [envBucket.arnForObjects(props.envObjectKey)],
-      })
-    );
+    // S3 envファイルをECSが取得するための権限は「Execution Role」側（重要） [4](https://github.com/aws/aws-sdk-go-v2/issues/1701)
+    taskDef.addToExecutionRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:GetObject'],
+      resources: [envBucket.arnForObjects(envObjectKey)],
+    }));
+    // 推奨（環境によって必要になるケースがある） [4](https://github.com/aws/aws-sdk-go-v2/issues/1701)
+    taskDef.addToExecutionRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:GetBucketLocation'],
+      resources: [envBucket.bucketArn],
+    }));
 
-    // コンテナ（ECRからpull）
+    // --- 既存SQS（アプリが実際にReceiveMessageするキュー） ---
+    const targetQueue = sqs.Queue.fromQueueAttributes(this, 'TargetQueue', {
+      queueArn: targetQueueArn,
+      queueUrl: targetQueueUrl,
+    });
+
+    // アプリがSQS APIを叩くので「Task Role」に権限が必要 [1](https://zenn.dev/infra_tomo/articles/18d48bd77677f8)
+    targetQueue.grantConsumeMessages(taskDef.taskRole);
+
+    // Container
     taskDef.addContainer('AppContainer', {
-      image: ecs.ContainerImage.fromEcrRepository(repo, ecrImageTag),
+      image: ecs.ContainerImage.fromEcrRepository(repo, tag),
       logging: ecs.LogDrivers.awsLogs({ logGroup, streamPrefix: 'app' }),
 
-      // 既存の環境変数
+      // 明示的にQUEUE_URLを渡す（アプリが別キュー参照しないように）
       environment: {
-        QUEUE_URL: this.queue.queueUrl,
+        QUEUE_URL: targetQueueUrl,
       },
 
-      // ★ここが核心：S3のecs.envを読み込む
+      // S3の.envを読み込む [3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html)
       environmentFiles: [
-        ecs.EnvironmentFile.fromBucket(envBucket, props.envObjectKey),
+        ecs.EnvironmentFile.fromBucket(envBucket, envObjectKey),
       ],
     });
 
-    // SQS受信権限（最小権限）
-    this.queue.grantConsumeMessages(taskDef.taskRole);
-
-    // --- Fargate Service ---
+    // Fargate Service
     this.service = new ecs.FargateService(this, 'Service', {
       cluster: this.cluster,
       taskDefinition: taskDef,
@@ -109,11 +113,12 @@ export class EcsStack extends Stack {
     });
 
     // Outputs
-    new CfnOutput(this, 'QueueUrl', { value: this.queue.queueUrl });
     new CfnOutput(this, 'ClusterName', { value: this.cluster.clusterName });
     new CfnOutput(this, 'ServiceName', { value: this.service.serviceName });
-    new CfnOutput(this, 'EcrRepoName', { value: props.ecrRepositoryName });
-    new CfnOutput(this, 'EcrImageTag', { value: ecrImageTag });
-    new CfnOutput(this, 'EnvFileS3', { value: `s3://${props.envBucketName}/${props.envObjectKey}` });
+    new CfnOutput(this, 'EcrRepoName', { value: ecrRepositoryName });
+    new CfnOutput(this, 'EcrImageTag', { value: tag });
+    new CfnOutput(this, 'EnvFileS3', { value: `s3://${envBucketName}/${envObjectKey}` });
+    new CfnOutput(this, 'TargetQueueUrl', { value: targetQueueUrl });
+    new CfnOutput(this, 'TargetQueueArn', { value: targetQueueArn });
   }
 }
