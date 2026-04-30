@@ -88,7 +88,7 @@ export class EcsStack extends Stack {
         QUEUE_URL: this.queue.queueUrl,
       },
 
-      // ★ここが核心：S3の.envを読み込む
+      // ★ここが核心：S3のecs.envを読み込む
       environmentFiles: [
         ecs.EnvironmentFile.fromBucket(envBucket, props.envObjectKey),
       ],
